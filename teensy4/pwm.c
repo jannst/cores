@@ -1,6 +1,7 @@
 #include "imxrt.h"
 #include "core_pins.h"
 #include "debug/printf.h"
+#include <stdbool.h>
 
 
 struct pwm_pin_info_struct {
@@ -149,6 +150,53 @@ void flexpwmWrite(IMXRT_FLEXPWM_t *p, unsigned int submodule, uint8_t channel, u
 		//printf(" write channel B\n");
 	}
 	p->MCTRL |= FLEXPWM_MCTRL_LDOK(mask);
+}
+
+void flexPwmInvertPolarity(uint8_t pin, bool inversePolarity)
+{
+	const struct pwm_pin_info_struct *info;
+
+	if (pin >= CORE_NUM_DIGITAL) return;
+	info = pwm_pin_info + pin;
+
+	//return if not a FlexPWM pin
+	if (info->type != 1) return;
+
+	// FlexPWM pin
+	IMXRT_FLEXPWM_t *flexpwm;
+	switch ((info->module >> 4) & 3) {
+		case 0: flexpwm = &IMXRT_FLEXPWM1; break;
+		case 1: flexpwm = &IMXRT_FLEXPWM2; break;
+		case 2: flexpwm = &IMXRT_FLEXPWM3; break;
+		default: flexpwm = &IMXRT_FLEXPWM4;
+	}
+
+	unsigned int submodule = info->module & 0x03;
+	uint8_t channel = info->channel;
+	uint8_t polarityShift = 0;
+
+	//find out offset for the channel
+	//TODO: move magic numbers to declarations 
+	switch (channel) {
+	  case 0: // X
+	  	polarityShift              = 8U;  //PWM_OCTRL_POLX_SHIFT
+		break;
+	  case 1: // A
+		polarityShift              = 10U; //PWM_OCTRL_POLA_SHIFT
+		break;
+	  case 2: // B
+	    polarityShift              = 9U;  //PWM_OCTRL_POLB_SHIFT
+	}
+
+	//if polarityShift was not initialized skip
+	if(!polarityShift) return;
+
+	//update polarity
+	if(inversePolarity) {
+		flexpwm->SM[submodule].OCTRL |= ((uint16_t)1U << (uint16_t)polarityShift);
+	} else {
+		flexpwm->SM[submodule].OCTRL &= ~((uint16_t)1U << (uint16_t)polarityShift);
+	}
 }
 
 void flexpwmFrequency(IMXRT_FLEXPWM_t *p, unsigned int submodule, uint8_t channel, float frequency)
